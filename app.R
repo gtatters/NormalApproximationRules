@@ -107,6 +107,23 @@ draw_binom_normal <- function(n, p, main, xlab, sim = NULL) {
                     "Normal curve on impossible counts"))
 }
 
+# Draws a base-R plot as a PNG image. Safari-safe stand-in for renderPlot(),
+# which currently fails in Safari under Shinylive. Use with imageOutput().
+render_base <- function(id, session, draw) {
+  renderImage({
+    cd <- session$clientData
+    w  <- cd[[paste0("output_", id, "_width")]]
+    h  <- cd[[paste0("output_", id, "_height")]]
+    req(w > 0, h > 0)
+    pr <- cd$pixelratio
+    if (is.null(pr)) pr <- 1
+    f <- tempfile(fileext = ".png")
+    png(f, width = w * pr, height = h * pr, res = 72 * pr)
+    tryCatch(draw(), finally = dev.off())
+    list(src = f, contentType = "image/png", width = w, height = h)
+  }, deleteFile = TRUE)
+}
+
 # ================================ UI =========================================
 ui <- fluidPage(
   titlePanel("When Does the Normal Approximation Break Down?",
@@ -115,7 +132,24 @@ ui <- fluidPage(
   tags$head(tags$style(HTML(
     ".action-button { color:#fff; background-color:#569BBD; border:none; }
      .action-button:hover { color:#fff; background-color:#3E7C99; }
-     .action-button:active { transform:scale(0.97); }"
+     .action-button:active { transform:scale(0.97); }
+
+     .nav-tabs > li.active > a,
+     .nav-tabs > li.active > a:hover,
+     .nav-tabs > li.active > a:focus {
+       color: #009499 !important;
+       font-size: 12px; font-weight: bold;
+       background-color: #f0fafa !important;
+     }
+     .nav-tabs > li > a {
+       color: #666;
+       font-size: 12px;
+       padding: 5px 9px;
+     }
+     .nav-tabs > li > a:hover {
+       color: #009499;
+       background-color: #f0fafa;
+     }"
   ))),
   
   tabsetPanel(
@@ -170,8 +204,8 @@ ui <- fluidPage(
             )
           ),
           fluidRow(
-            column(6, plotOutput("t1_dist", height = "380px")),
-            column(6, plotOutput("t1_ci",   height = "380px"))
+            column(6, imageOutput("t1_dist", height = "380px")),
+            column(6, imageOutput("t1_ci",   height = "380px"))
           ),
           br(),
           wellPanel(div(uiOutput("t1_verdict"), align = "justify"))
@@ -229,8 +263,8 @@ ui <- fluidPage(
             )
           ),
           fluidRow(
-            column(6, plotOutput("t2_expected", height = "380px")),
-            column(6, plotOutput("t2_sim_plot", height = "380px"))
+            column(6, imageOutput("t2_expected", height = "380px")),
+            column(6, imageOutput("t2_sim_plot", height = "380px"))
           ),
           br(),
           wellPanel(div(uiOutput("t2_verdict"), align = "justify"))
@@ -306,14 +340,14 @@ server <- function(input, output, session) {
     big_value(paste0(format(round(100 * d$coverage, 1), nsmall = 1), "%"), blue)
   })
   
-  output$t1_dist <- renderPlot({
+  output$t1_dist <- render_base("t1_dist", session, function() {
     d <- t1_calc()
     draw_binom_normal(d$n, d$p,
                       main = "Binomial count vs. normal curve",
                       xlab = "Number of successes")
   })
   
-  output$t1_ci <- renderPlot({
+  output$t1_ci <- render_base("t1_ci", session, function() {
     s <- t1_sim(); p <- input$t1_p
     xl  <- range(c(s$lo, s$hi, p))
     pad <- max(0.05 * diff(xl), 0.02)
@@ -511,7 +545,7 @@ server <- function(input, output, session) {
     big_value(paste0(format(round(100 * s$fpr, 1), nsmall = 1), "%"), blue)
   })
   
-  output$t2_expected <- renderPlot({
+  output$t2_expected <- render_base("t2_expected", session, function() {
     d    <- t2_calc()
     Er   <- round(d$E, 8)
     cols <- ifelse(Er < 1, red, ifelse(Er < 5, orange, teal))
@@ -537,7 +571,7 @@ server <- function(input, output, session) {
                       "E < 1 (problem)"))
   })
   
-  output$t2_sim_plot <- renderPlot({
+  output$t2_sim_plot <- render_base("t2_sim_plot", session, function() {
     d <- t2_calc(); s <- t2_sim()
     
     if (input$t2_view == "rare") {
